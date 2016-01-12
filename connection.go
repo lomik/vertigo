@@ -1,6 +1,7 @@
 package vertigo
 
 import (
+	"bufio"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -33,6 +34,7 @@ type Connection struct {
 	backendPid        uint32            // The PID of the server's process.
 	backendKey        uint32            // The secret key of the server's backend process.
 	transactionStatus byte              // The current transaction status of the connection
+	bufioReader       io.Reader         // Read all data from socket via buffered reader. Minimize syscalls
 }
 
 // Opens a connection to the server using the information in the config parameter.
@@ -172,6 +174,8 @@ func (c *Connection) openConnection() {
 		}
 	}
 
+	c.bufioReader = bufio.NewReader(c.socket)
+
 	c.authenticateConnection()
 }
 
@@ -247,7 +251,7 @@ func (c *Connection) sendMessage(msg OutgoingMessage) {
 // This method will log the message to the TrafficLogger if the
 // Traffic logger is set to a logger instance.
 func (c *Connection) receiveMessage() IncomingMessage {
-	msg, err := receiveMessage(c.socket)
+	msg, err := receiveMessage(c.bufioReader)
 	if err != nil {
 		panic(err)
 	}
