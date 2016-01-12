@@ -7,7 +7,7 @@ type Resultset struct {
 }
 
 type Row struct {
-	Values []interface{}
+	Values [][]byte
 }
 
 type Field struct {

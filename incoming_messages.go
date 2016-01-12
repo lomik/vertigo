@@ -209,7 +209,7 @@ func parseRowDescriptionMessage(body []byte) (IncomingMessage, error) {
 }
 
 type DataRowMessage struct {
-	Values []interface{}
+	Values [][]byte
 }
 
 func parseDataRowMessage(body []byte) (IncomingMessage, error) {
@@ -222,7 +222,7 @@ func parseDataRowMessage(body []byte) (IncomingMessage, error) {
 	offset := 2
 	bodyLen := len(body)
 
-	msg.Values = make([]interface{}, numValues)
+	msg.Values = make([][]byte, numValues)
 	for i := range msg.Values {
 		var size uint32
 		if err := decodeUint32(body[offset:], &size); err != nil {
