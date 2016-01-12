@@ -236,7 +236,7 @@ func parseDataRowMessage(body []byte) (IncomingMessage, error) {
 			if offset+int(size) > bodyLen {
 				return msg, errors.New("parseDataRowMessage: truncated message")
 			}
-			msg.Values[i] = string(body[offset : offset+int(size)])
+			msg.Values[i] = body[offset : offset+int(size)]
 			offset += int(size)
 		}
 	}
