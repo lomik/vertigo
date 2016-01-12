@@ -2,7 +2,6 @@ package vertigo
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -20,23 +19,27 @@ type ErrorResponseMessage struct {
 	Fields map[byte]string
 }
 
-func parseErrorResponseMessage(reader *bufio.Reader) (IncomingMessage, error) {
+func parseErrorResponseMessage(body []byte) (IncomingMessage, error) {
 	msg := ErrorResponseMessage{}
 	msg.Fields = make(map[byte]string)
+	offset := 0
 	for {
 		var fieldType byte
-		if err := decodeNumeric(reader, &fieldType); err != nil {
+		if err := decodeUint8(body[offset:], &fieldType); err != nil {
 			return msg, err
 		}
+
+		offset += 1
 
 		if fieldType == 0 {
 			break
 		}
 
-		if str, err := decodeString(reader); err != nil {
+		if str, err := decodeCString(body[offset:]); err != nil {
 			return msg, err
 		} else {
 			msg.Fields[fieldType] = str
+			offset += len(str) + 1
 		}
 	}
 	return msg, nil
@@ -56,7 +59,7 @@ func (msg ErrorResponseMessage) Severity() string {
 
 type EmptyQueryMessage struct{}
 
-func parseEmptyQueryMessage(reader *bufio.Reader) (IncomingMessage, error) {
+func parseEmptyQueryMessage(body []byte) (IncomingMessage, error) {
 	return EmptyQueryMessage{}, nil
 }
 
@@ -77,9 +80,9 @@ type AuthenticationRequestMessage struct {
 	Salt     []byte
 }
 
-func parseAuthenticationRequestMessage(reader *bufio.Reader) (IncomingMessage, error) {
+func parseAuthenticationRequestMessage(body []byte) (IncomingMessage, error) {
 	msg := AuthenticationRequestMessage{}
-	err := decodeNumeric(reader, &msg.AuthCode)
+	err := decodeUint32(body, &msg.AuthCode)
 	return msg, err
 }
 
@@ -87,9 +90,9 @@ type ReadyForQueryMessage struct {
 	TransactionStatus byte
 }
 
-func parseReadyForQueryMessage(reader *bufio.Reader) (IncomingMessage, error) {
+func parseReadyForQueryMessage(body []byte) (IncomingMessage, error) {
 	msg := ReadyForQueryMessage{}
-	err := decodeNumeric(reader, &msg.TransactionStatus)
+	err := decodeUint8(body, &msg.TransactionStatus)
 	return msg, err
 }
 
@@ -98,17 +101,20 @@ type ParameterStatusMessage struct {
 	Value string
 }
 
-func parseParameterStatusMessage(reader *bufio.Reader) (IncomingMessage, error) {
+func parseParameterStatusMessage(body []byte) (IncomingMessage, error) {
 	msg := ParameterStatusMessage{}
-	if str, err := decodeString(reader); err != nil {
+	var offset int
+	if str, err := decodeCString(body[offset:]); err != nil {
 		return msg, err
 	} else {
 		msg.Name = str
+		offset += len(str) + 1
 	}
-	if str, err := decodeString(reader); err != nil {
+	if str, err := decodeCString(body[offset:]); err != nil {
 		return msg, err
 	} else {
 		msg.Value = str
+		offset += len(str) + 1
 	}
 	return msg, nil
 }
@@ -118,12 +124,13 @@ type BackendKeyDataMessage struct {
 	Key uint32
 }
 
-func parseBackendKeyDataMessage(reader *bufio.Reader) (IncomingMessage, error) {
+func parseBackendKeyDataMessage(body []byte) (IncomingMessage, error) {
 	msg := BackendKeyDataMessage{}
-	if err := decodeNumeric(reader, &msg.Pid); err != nil {
+
+	if err := decodeUint32(body, &msg.Pid); err != nil {
 		return msg, err
 	}
-	if err := decodeNumeric(reader, &msg.Key); err != nil {
+	if err := decodeUint32(body[4:], &msg.Key); err != nil {
 		return msg, err
 	}
 	return msg, nil
@@ -133,9 +140,9 @@ type CommandCompleteMessage struct {
 	Result string
 }
 
-func parseCommandCompleteMessage(reader *bufio.Reader) (IncomingMessage, error) {
+func parseCommandCompleteMessage(body []byte) (IncomingMessage, error) {
 	msg := CommandCompleteMessage{}
-	if str, err := decodeString(reader); err != nil {
+	if str, err := decodeCString(body); err != nil {
 		return msg, err
 	} else {
 		msg.Result = str
@@ -148,46 +155,55 @@ type RowDescriptionMessage struct {
 	Fields []Field
 }
 
-func parseRowDescriptionMessage(reader *bufio.Reader) (IncomingMessage, error) {
+func parseRowDescriptionMessage(body []byte) (IncomingMessage, error) {
 	msg := RowDescriptionMessage{}
 	var numFields uint16
-	if err := decodeNumeric(reader, &numFields); err != nil {
+	if err := decodeUint16(body, &numFields); err != nil {
 		return msg, err
 	}
+
+	offset := 2
 
 	msg.Fields = make([]Field, numFields)
 	for i := range msg.Fields {
 		field := &msg.Fields[i]
 
-		if name, err := decodeString(reader); err != nil {
+		if name, err := decodeCString(body[offset:]); err != nil {
 			return msg, err
 		} else {
 			field.Name = name
+			offset += len(name) + 1
 		}
 
-		if err := decodeNumeric(reader, &field.TableOID); err != nil {
+		if err := decodeUint32(body[offset:], &field.TableOID); err != nil {
 			return msg, err
 		}
+		offset += 4
 
-		if err := decodeNumeric(reader, &field.AttributeNumber); err != nil {
+		if err := decodeUint16(body[offset:], &field.AttributeNumber); err != nil {
 			return msg, err
 		}
+		offset += 2
 
-		if err := decodeNumeric(reader, &field.DataTypeOID); err != nil {
+		if err := decodeUint32(body[offset:], &field.DataTypeOID); err != nil {
 			return msg, err
 		}
+		offset += 4
 
-		if err := decodeNumeric(reader, &field.DataTypeSize); err != nil {
+		if err := decodeUint16(body[offset:], &field.DataTypeSize); err != nil {
 			return msg, err
 		}
+		offset += 2
 
-		if err := decodeNumeric(reader, &field.TypeModifier); err != nil {
+		if err := decodeUint32(body[offset:], &field.TypeModifier); err != nil {
 			return msg, err
 		}
+		offset += 4
 
-		if err := decodeNumeric(reader, &field.FormatCode); err != nil {
+		if err := decodeUint16(body[offset:], &field.FormatCode); err != nil {
 			return msg, err
 		}
+		offset += 2
 	}
 	return msg, nil
 }
@@ -196,35 +212,39 @@ type DataRowMessage struct {
 	Values []interface{}
 }
 
-func parseDataRowMessage(reader *bufio.Reader) (IncomingMessage, error) {
+func parseDataRowMessage(body []byte) (IncomingMessage, error) {
 	msg := DataRowMessage{}
 	var numValues uint16
-	if err := decodeNumeric(reader, &numValues); err != nil {
+	if err := decodeUint16(body, &numValues); err != nil {
 		return msg, err
 	}
+
+	offset := 2
+	bodyLen := len(body)
 
 	msg.Values = make([]interface{}, numValues)
 	for i := range msg.Values {
 		var size uint32
-		if err := decodeNumeric(reader, &size); err != nil {
+		if err := decodeUint32(body[:offset], &size); err != nil {
 			return msg, err
 		}
+		offset += 4
 
 		if size == 0xffffffff {
 			msg.Values[i] = nil
 		} else {
-			value := make([]byte, size)
-			if _, err := io.ReadFull(reader, value); err != nil {
-				return msg, err
+			if offset+int(size) > bodyLen {
+				return msg, errors.New("parseDataRowMessage: truncated message")
 			}
-			msg.Values[i] = string(value)
+			msg.Values[i] = string(body[offset : offset+int(size)])
+			offset += int(size)
 		}
 	}
 
 	return msg, nil
 }
 
-type messageFactoryMethod func(reader *bufio.Reader) (IncomingMessage, error)
+type messageFactoryMethod func(raw []byte) (IncomingMessage, error)
 
 var messageFactoryMethods = map[byte]messageFactoryMethod{
 	'R': parseAuthenticationRequestMessage,
@@ -244,13 +264,13 @@ func receiveMessage(r io.Reader) (message IncomingMessage, err error) {
 		messageSize uint32
 	)
 
-	if err = binary.Read(r, binary.BigEndian, &messageType); err != nil {
+	header := make([]byte, 5)
+	if _, err = io.ReadAtLeast(r, header, 5); err != nil {
 		return
 	}
 
-	if err = binary.Read(r, binary.BigEndian, &messageSize); err != nil {
-		return
-	}
+	messageType = header[0]
+	messageSize = unpackUint32(header[1:5])
 
 	var messageContent []byte
 	if messageSize >= 4 {
@@ -265,12 +285,11 @@ func receiveMessage(r io.Reader) (message IncomingMessage, err error) {
 		return
 	}
 
-	reader := bufio.NewReader(bytes.NewBuffer(messageContent))
 	factoryMethod := messageFactoryMethods[messageType]
 	if factoryMethod == nil {
 		panic(fmt.Sprintf("Unknown message type: %c", messageType))
 	}
-	return factoryMethod(reader)
+	return factoryMethod(messageContent)
 }
 
 func decodeNumeric(reader *bufio.Reader, data interface{}) error {
@@ -282,4 +301,54 @@ func decodeString(reader *bufio.Reader) (str string, err error) {
 		return str, err
 	}
 	return str[0 : len(str)-1], nil
+}
+
+func decodeCString(p []byte) (str string, err error) {
+	size := len(p)
+	for i := 0; i < size; i++ {
+		if p[i] == 0x0 {
+			return string(p[:i]), nil
+		}
+	}
+	return "", errors.New("decodeCString: delimeter not found")
+}
+
+func unpackUint32(p []byte) uint32 {
+	result := uint32(0)
+	for i := uint(0); i < 4; i++ {
+		result |= uint32(p[i]) << (8 * (3 - i))
+	}
+	return result
+}
+
+func unpackUint16(p []byte) uint16 {
+	result := uint16(0)
+	for i := uint(0); i < 2; i++ {
+		result |= uint16(p[i]) << (8 * (1 - i))
+	}
+	return result
+}
+
+func decodeUint32(p []byte, v *uint32) error {
+	if len(p) < 4 {
+		return errors.New("decodeUint32: A buffer should be at least 4 bytes long")
+	}
+	*v = unpackUint32(p)
+	return nil
+}
+
+func decodeUint16(p []byte, v *uint16) error {
+	if len(p) < 2 {
+		return errors.New("decodeUint16: A buffer should be at least 2 bytes long")
+	}
+	*v = unpackUint16(p)
+	return nil
+}
+
+func decodeUint8(p []byte, v *uint8) error {
+	if len(p) < 1 {
+		return errors.New("decodeUint8: A buffer should be at least 1 bytes long")
+	}
+	*v = p[0]
+	return nil
 }

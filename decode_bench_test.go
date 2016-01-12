@@ -62,3 +62,15 @@ func BenchmarkUnpackUint32V1(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkDecodeUint32(b *testing.B) {
+	var raw = []byte("\x01u\xcb\xea") // encoded 24497130
+	var value uint32
+
+	for n := 0; n < b.N; n++ {
+		decodeUint32(raw, &value)
+		if value != 24497130 {
+			b.FailNow()
+		}
+	}
+}
