@@ -225,7 +225,7 @@ func parseDataRowMessage(body []byte) (IncomingMessage, error) {
 	msg.Values = make([]interface{}, numValues)
 	for i := range msg.Values {
 		var size uint32
-		if err := decodeUint32(body[:offset], &size); err != nil {
+		if err := decodeUint32(body[offset:], &size); err != nil {
 			return msg, err
 		}
 		offset += 4
